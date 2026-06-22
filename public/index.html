@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#10b981">
+<meta name="description" content="Calcule tes besoins, suis ton alimentation et analyse tes plats en photo.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NutriTracker">
+<title>NutriTracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior-y: none; }
+  .ring-bg { transition: stroke-dashoffset 0.5s ease; }
+  input, select, button { font-size: 16px; }
+  .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 0.8s linear infinite; }
+</style>
+</head>
+<body class="bg-slate-100">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ===================== Supabase ===================== */
+const CFG = window.NUTRI_CONFIG || {};
+const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+
+async function apiFetch(path, token, body) {
+  const res = await fetch("/api/" + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+/* ===================== Persistance locale (par utilisateur) ===================== */
+function lsKey(uid) { return "nutritracker_" + (uid || "anon"); }
+function loadLocal(uid) {
+  try { return JSON.parse(localStorage.getItem(lsKey(uid))) || {}; } catch { return {}; }
+}
+function saveLocal(uid, s) {
+  try { localStorage.setItem(lsKey(uid), JSON.stringify(s)); } catch {}
+}
+
+/* ===================== Données nutrition ===================== */
+const FOOD_DB = [
+  { name: "Pâtes cuites", kcal: 158, p: 5.8, c: 31, f: 0.9 },
+  { name: "Pâtes crues", kcal: 360, p: 12, c: 72, f: 1.5 },
+  { name: "Riz blanc cuit", kcal: 130, p: 2.7, c: 28, f: 0.3 },
+  { name: "Riz complet cuit", kcal: 123, p: 2.6, c: 26, f: 1 },
+  { name: "Pain blanc", kcal: 265, p: 9, c: 49, f: 3.2 },
+  { name: "Pain complet", kcal: 247, p: 13, c: 41, f: 3.4 },
+  { name: "Pomme de terre cuite", kcal: 87, p: 2, c: 20, f: 0.1 },
+  { name: "Quinoa cuit", kcal: 120, p: 4.4, c: 21, f: 1.9 },
+  { name: "Flocons d'avoine", kcal: 389, p: 17, c: 66, f: 7 },
+  { name: "Poulet (blanc, cuit)", kcal: 165, p: 31, c: 0, f: 3.6 },
+  { name: "Dinde (escalope)", kcal: 135, p: 29, c: 0, f: 1.7 },
+  { name: "Bœuf haché 5%", kcal: 137, p: 21, c: 0, f: 5 },
+  { name: "Bœuf haché 15%", kcal: 215, p: 19, c: 0, f: 15 },
+  { name: "Saumon", kcal: 208, p: 20, c: 0, f: 13 },
+  { name: "Thon (au naturel)", kcal: 116, p: 26, c: 0, f: 1 },
+  { name: "Œuf entier", kcal: 155, p: 13, c: 1.1, f: 11 },
+  { name: "Blanc d'œuf", kcal: 52, p: 11, c: 0.7, f: 0.2 },
+  { name: "Jambon blanc", kcal: 107, p: 18, c: 1, f: 3.5 },
+  { name: "Crevettes", kcal: 99, p: 24, c: 0.2, f: 0.3 },
+  { name: "Tofu", kcal: 76, p: 8, c: 1.9, f: 4.8 },
+  { name: "Lentilles cuites", kcal: 116, p: 9, c: 20, f: 0.4 },
+  { name: "Pois chiches cuits", kcal: 164, p: 9, c: 27, f: 2.6 },
+  { name: "Haricots rouges cuits", kcal: 127, p: 8.7, c: 23, f: 0.5 },
+  { name: "Lait demi-écrémé", kcal: 47, p: 3.3, c: 4.8, f: 1.6 },
+  { name: "Yaourt nature", kcal: 61, p: 3.5, c: 4.7, f: 3.3 },
+  { name: "Fromage blanc 0%", kcal: 47, p: 8, c: 4, f: 0.2 },
+  { name: "Skyr", kcal: 63, p: 11, c: 4, f: 0.2 },
+  { name: "Emmental", kcal: 380, p: 28, c: 0, f: 30 },
+  { name: "Mozzarella", kcal: 280, p: 18, c: 3, f: 22 },
+  { name: "Beurre", kcal: 717, p: 0.9, c: 0.1, f: 81 },
+  { name: "Huile d'olive", kcal: 884, p: 0, c: 0, f: 100 },
+  { name: "Amandes", kcal: 579, p: 21, c: 22, f: 50 },
+  { name: "Cacahuètes", kcal: 567, p: 26, c: 16, f: 49 },
+  { name: "Beurre de cacahuète", kcal: 588, p: 25, c: 20, f: 50 },
+  { name: "Avocat", kcal: 160, p: 2, c: 9, f: 15 },
+  { name: "Banane", kcal: 89, p: 1.1, c: 23, f: 0.3 },
+  { name: "Pomme", kcal: 52, p: 0.3, c: 14, f: 0.2 },
+  { name: "Orange", kcal: 47, p: 0.9, c: 12, f: 0.1 },
+  { name: "Fraises", kcal: 32, p: 0.7, c: 7.7, f: 0.3 },
+  { name: "Brocoli", kcal: 34, p: 2.8, c: 7, f: 0.4 },
+  { name: "Tomate", kcal: 18, p: 0.9, c: 3.9, f: 0.2 },
+  { name: "Carotte", kcal: 41, p: 0.9, c: 10, f: 0.2 },
+  { name: "Épinards", kcal: 23, p: 2.9, c: 3.6, f: 0.4 },
+  { name: "Chocolat noir 70%", kcal: 598, p: 7.8, c: 46, f: 43 },
+  { name: "Miel", kcal: 304, p: 0.3, c: 82, f: 0 },
+  { name: "Sucre", kcal: 387, p: 0, c: 100, f: 0 },
+  { name: "Pizza margherita", kcal: 266, p: 11, c: 33, f: 10 },
+  { name: "Frites", kcal: 312, p: 3.4, c: 41, f: 15 },
+];
+const ACTIVITY = [
+  { id: "sed", label: "Sédentaire", sub: "peu/pas de sport", factor: 1.2 },
+  { id: "light", label: "Léger", sub: "1-3 séances/sem", factor: 1.375 },
+  { id: "mod", label: "Modéré", sub: "3-5 séances/sem", factor: 1.55 },
+  { id: "active", label: "Actif", sub: "6-7 séances/sem", factor: 1.725 },
+  { id: "vactive", label: "Très actif", sub: "athlète / travail physique", factor: 1.9 },
+];
+const GOALS = [
+  { id: "lose", label: "Perdre", adj: -0.20, protPerKg: 2.0 },
+  { id: "maintain", label: "Maintenir", adj: 0, protPerKg: 1.6 },
+  { id: "gain", label: "Prendre", adj: 0.15, protPerKg: 1.8 },
+];
+function computeTargets(p) {
+  const w = parseFloat(p.weight), h = parseFloat(p.height), a = parseFloat(p.age);
+  if (!w || !h || !a) return null;
+  let bmr = 10 * w + 6.25 * h - 5 * a + (p.sex === "h" ? 5 : -161);
+  const act = ACTIVITY.find(x => x.id === p.activity) || ACTIVITY[0];
+  const goal = GOALS.find(x => x.id === p.goal) || GOALS[1];
+  const tdee = bmr * act.factor;
+  const kcal = Math.round(tdee * (1 + goal.adj));
+  const protein = Math.round(w * goal.protPerKg);
+  const fat = Math.round((kcal * 0.25) / 9);
+  const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+  return { bmr: Math.round(bmr), tdee: Math.round(tdee), kcal, protein, carbs, fat };
+}
+
+/* ===================== UI helpers ===================== */
+function Card({ children, className = "" }) {
+  return <div className={"bg-white rounded-3xl shadow-sm " + className}>{children}</div>;
+}
+function MacroRing({ value, target, label, color }) {
+  const pct = target > 0 ? Math.min(value / target, 1) : 0;
+  const R = 30, C = 2 * Math.PI * R;
+  const over = value > target && target > 0;
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="78" height="78" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r={R} fill="none" stroke="#eef2f6" strokeWidth="8" />
+        <circle cx="40" cy="40" r={R} fill="none" stroke={over ? "#ef4444" : color} strokeWidth="8"
+          strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - pct)}
+          className="ring-bg" transform="rotate(-90 40 40)" />
+        <text x="40" y="38" textAnchor="middle" className="fill-slate-800" style={{fontSize:"14px",fontWeight:700}}>{Math.round(value)}</text>
+        <text x="40" y="52" textAnchor="middle" className="fill-slate-400" style={{fontSize:"9px"}}>/{target}g</text>
+      </svg>
+      <span className="text-xs font-medium text-slate-500 mt-1">{label}</span>
+    </div>
+  );
+}
+const fieldCls = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 focus:bg-white outline-none transition";
+function Spinner({ className = "" }) {
+  return <svg className={"spin " + className} width="20" height="20" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+  </svg>;
+}
+
+/* ===================== Écran AUTH ===================== */
+function AuthScreen() {
+  const [mode, setMode] = useState("login"); // login | signup
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setMsg(null); setBusy(true);
+    try {
+      if (mode === "signup") {
+        const { data, error } = await sb.auth.signUp({ email, password: pw });
+        if (error) throw error;
+        if (!data.session) setMsg({ type: "info", text: "Compte créé ! Vérifie ta boîte mail pour confirmer, puis connecte-toi." });
+      } else {
+        const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+        if (error) throw error;
+      }
+    } catch (e) {
+      setMsg({ type: "error", text: e.message || "Une erreur est survenue." });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="max-w-md mx-auto min-h-screen flex flex-col justify-center px-6">
+      <div className="text-center mb-8">
+        <div className="text-5xl mb-2">🥗</div>
+        <h1 className="text-2xl font-extrabold">NutriTracker</h1>
+        <p className="text-slate-400 text-sm mt-1">7 jours d'essai gratuit, sans engagement.</p>
+      </div>
+      <Card className="p-6 space-y-3">
+        <div className="flex gap-1 bg-slate-100 rounded-2xl p-1 mb-2">
+          {[["login","Connexion"],["signup","Inscription"]].map(([m,l])=>
+            <button key={m} onClick={()=>{setMode(m);setMsg(null);}}
+              className={"flex-1 py-2.5 rounded-xl text-sm font-semibold " + (mode===m?"bg-white shadow text-emerald-600":"text-slate-500")}>{l}</button>)}
+        </div>
+        <input className={fieldCls} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
+        <input className={fieldCls} type="password" placeholder="Mot de passe" value={pw} onChange={e=>setPw(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&submit()} />
+        {msg && <p className={"text-sm rounded-xl px-3 py-2 " + (msg.type==="error"?"bg-red-50 text-red-600":"bg-emerald-50 text-emerald-700")}>{msg.text}</p>}
+        <button onClick={submit} disabled={busy || !email || !pw}
+          className="w-full bg-emerald-500 text-white font-bold py-3.5 rounded-2xl active:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
+          {busy && <Spinner />}{mode==="signup" ? "Créer mon compte" : "Se connecter"}
+        </button>
+      </Card>
+      <p className="text-center text-[11px] text-slate-300 mt-6 px-6">Estimations indicatives, ne remplacent pas un avis médical.</p>
+    </div>
+  );
+}
+
+/* ===================== Écran PAYWALL ===================== */
+function Paywall({ token, onLogout, email }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  async function subscribe() {
+    setBusy(true); setErr(null);
+    const { ok, data } = await apiFetch("create-checkout", token, {});
+    if (ok && data.url) { window.location.href = data.url; }
+    else { setErr(data.error || "Impossible de démarrer le paiement."); setBusy(false); }
+  }
+  return (
+    <div className="max-w-md mx-auto min-h-screen flex flex-col justify-center px-6">
+      <Card className="p-7 text-center">
+        <div className="text-5xl mb-3">⏳</div>
+        <h1 className="text-xl font-extrabold mb-1">Ton essai gratuit est terminé</h1>
+        <p className="text-slate-500 text-sm mb-5">Abonne-toi pour continuer à utiliser le calculateur, le suivi et l'analyse photo par IA.</p>
+        <div className="bg-emerald-50 rounded-2xl p-4 text-left text-sm text-emerald-800 mb-5 space-y-1.5">
+          <div>✓ Besoins caloriques personnalisés</div>
+          <div>✓ Suivi quotidien + historique</div>
+          <div>✓ Analyse de tes plats en photo (IA)</div>
+        </div>
+        {err && <p className="text-sm bg-red-50 text-red-600 rounded-xl px-3 py-2 mb-3">{err}</p>}
+        <button onClick={subscribe} disabled={busy}
+          className="w-full bg-emerald-500 text-white font-bold py-3.5 rounded-2xl active:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
+          {busy && <Spinner />}S'abonner
+        </button>
+        <button onClick={onLogout} className="text-slate-400 text-sm mt-4">Se déconnecter ({email})</button>
+      </Card>
+    </div>
+  );
+}
+
+/* ===================== Analyse photo ===================== */
+function downscaleToBase64(file, maxDim = 1024, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = height * maxDim / width; width = maxDim; }
+        else if (height > maxDim) { width = width * maxDim / height; height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve({ base64: dataUrl.split(",")[1], mime: "image/jpeg" });
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function PhotoAnalyzer({ token, onAddItems }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const { base64, mime } = await downscaleToBase64(file);
+      const { ok, status, data } = await apiFetch("analyze-meal", token, { image: base64, mime });
+      if (!ok) {
+        if (status === 402) setErr("Ton accès a expiré. Abonne-toi pour analyser des photos.");
+        else setErr(data.error || "L'analyse a échoué. Réessaie avec une photo plus nette.");
+      } else {
+        setResult(data);
+      }
+    } catch (e2) {
+      setErr("Impossible de lire la photo.");
+    } finally { setBusy(false); if (inputRef.current) inputRef.current.value = ""; }
+  }
+
+  function addAll() {
+    if (!result || !result.items) return;
+    const entries = result.items.map(it => ({
+      name: it.name, grams: Math.round(it.grams || 0),
+      kcal: Math.round(it.kcal || 0),
+      p: +(+it.protein || 0).toFixed(1), c: +(+it.carbs || 0).toFixed(1), f: +(+it.fat || 0).toFixed(1),
+    }));
+    onAddItems(entries);
+    setResult(null);
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="font-bold text-slate-800">📷 Analyser un plat</h2>
+        <span className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">IA</span>
+      </div>
+      <p className="text-xs text-slate-400 mb-3">Prends ton repas en photo, l'IA estime les calories et macros.</p>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
+      <button onClick={()=>inputRef.current && inputRef.current.click()} disabled={busy}
+        className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-2xl active:bg-slate-900 disabled:opacity-60 flex items-center justify-center gap-2">
+        {busy ? (<><Spinner /> Analyse en cours…</>) : "Prendre / choisir une photo"}
+      </button>
+      {err && <p className="text-sm bg-red-50 text-red-600 rounded-xl px-3 py-2 mt-3">{err}</p>}
+
+      {result && (
+        <div className="mt-4">
+          {result.items && result.items.length > 0 ? (
+            <div>
+              <div className="bg-slate-50 rounded-2xl p-4 mb-3">
+                <div className="text-sm font-semibold mb-2 flex justify-between">
+                  <span>Détecté</span>
+                  {result.confidence && <span className="text-xs text-slate-400">fiabilité : {result.confidence}</span>}
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {result.items.map((it,i)=>
+                    <div key={i} className="flex justify-between py-2 text-sm">
+                      <span>{it.name} <span className="text-slate-400">({Math.round(it.grams||0)} g)</span></span>
+                      <span className="font-semibold">{Math.round(it.kcal||0)} kcal</span>
+                    </div>)}
+                </div>
+                {result.totals && (
+                  <div className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    Total ≈ {Math.round(result.totals.kcal||0)} kcal · {Math.round(result.totals.protein||0)}P / {Math.round(result.totals.carbs||0)}G / {Math.round(result.totals.fat||0)}L
+                  </div>
+                )}
+              </div>
+              {result.note && <p className="text-xs text-slate-400 mb-3">💡 {result.note}</p>}
+              <div className="flex gap-2">
+                <button onClick={addAll} className="flex-1 bg-emerald-500 text-white font-bold py-3 rounded-2xl active:bg-emerald-600">Ajouter au journal</button>
+                <button onClick={()=>setResult(null)} className="px-5 bg-slate-100 text-slate-500 font-semibold rounded-2xl">Annuler</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400 mt-2">Aucun aliment identifié sur cette photo. Réessaie avec une vue plus dégagée.</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ===================== Écran PROFIL ===================== */
+function ProfilScreen({ profile, setProfile, targets }) {
+  const set = (k, v) => setProfile({ ...profile, [k]: v });
+  return (
+    <div className="px-4 pt-2 space-y-4">
+      {targets ? (
+        <Card className="p-5 bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200">
+          <p className="text-emerald-50 text-sm font-medium">Ton objectif quotidien</p>
+          <div className="flex items-end gap-2 mt-1">
+            <span className="text-5xl font-extrabold leading-none">{targets.kcal}</span>
+            <span className="text-emerald-100 mb-1 font-medium">kcal</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            {[["Protéines",targets.protein],["Glucides",targets.carbs],["Lipides",targets.fat]].map(([l,v])=>
+              <div key={l} className="bg-white/15 rounded-2xl py-2.5 text-center backdrop-blur">
+                <div className="text-xl font-bold">{v}<span className="text-sm font-normal">g</span></div>
+                <div className="text-[11px] text-emerald-50">{l}</div>
+              </div>)}
+          </div>
+          <div className="text-[11px] text-emerald-100 mt-3 flex justify-between">
+            <span>Métab. base : {targets.bmr} kcal</span><span>Dépense : {targets.tdee} kcal</span>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-5 text-center text-slate-400 text-sm">Remplis tes infos ci-dessous pour calculer tes besoins 👇</Card>
+      )}
+
+      <Card className="p-5 space-y-4">
+        <h2 className="font-bold text-slate-800">Mes informations</h2>
+        <div>
+          <p className="text-sm font-medium text-slate-600 mb-1.5">Sexe</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[["h","Homme"],["f","Femme"]].map(([v,l]) =>
+              <button key={v} onClick={() => set("sex", v)}
+                className={"py-3 rounded-2xl text-sm font-semibold border-2 transition " +
+                  (profile.sex===v ? "bg-emerald-500 text-white border-emerald-500" : "border-slate-200 text-slate-500")}>{l}</button>)}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[["age","Âge","ans"],["weight","Poids","kg"],["height","Taille","cm"]].map(([k,l,u])=>
+            <div key={k}>
+              <p className="text-sm font-medium text-slate-600 mb-1.5">{l}</p>
+              <div className="relative">
+                <input type="number" inputMode="numeric" className={fieldCls + " pr-9 text-center"} value={profile[k]||""} onChange={e=>set(k,e.target.value)} />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{u}</span>
+              </div>
+            </div>)}
+        </div>
+        <div>
+          <p className="text-sm font-medium text-slate-600 mb-1.5">Niveau d'activité</p>
+          <div className="space-y-2">
+            {ACTIVITY.map(a =>
+              <button key={a.id} onClick={()=>set("activity",a.id)}
+                className={"w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 text-left transition " +
+                  (profile.activity===a.id ? "bg-emerald-50 border-emerald-500" : "border-slate-200")}>
+                <span>
+                  <span className={"font-semibold text-sm " + (profile.activity===a.id?"text-emerald-700":"text-slate-700")}>{a.label}</span>
+                  <span className="text-xs text-slate-400 block">{a.sub}</span>
+                </span>
+                <span className={"w-5 h-5 rounded-full border-2 flex-shrink-0 " + (profile.activity===a.id?"border-emerald-500 bg-emerald-500":"border-slate-300")}>
+                  {profile.activity===a.id && <svg viewBox="0 0 20 20" fill="white"><path d="M7.5 13.5l-3-3 1-1 2 2 5-5 1 1z"/></svg>}
+                </span>
+              </button>)}
+          </div>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-slate-600 mb-1.5">Objectif</p>
+          <div className="grid grid-cols-3 gap-2">
+            {GOALS.map(g =>
+              <button key={g.id} onClick={()=>set("goal",g.id)}
+                className={"py-3 rounded-2xl text-sm font-semibold border-2 transition " +
+                  (profile.goal===g.id ? "bg-emerald-500 text-white border-emerald-500" : "border-slate-200 text-slate-500")}>{g.label}</button>)}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ===================== Écran SUIVI ===================== */
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function SuiviScreen({ token, targets, log, setLog, customFoods, setCustomFoods }) {
+  const [date, setDate] = useState(todayStr());
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [grams, setGrams] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [nf, setNf] = useState({ name:"", kcal:"", p:"", c:"", f:"" });
+
+  const allFoods = useMemo(() => [...customFoods, ...FOOD_DB], [customFoods]);
+  const results = useMemo(() => {
+    if (!query) return [];
+    const q = query.toLowerCase();
+    return allFoods.filter(f => f.name.toLowerCase().includes(q)).slice(0,6);
+  }, [query, allFoods]);
+
+  const entries = log[date] || [];
+  const totals = entries.reduce((t,e)=>({kcal:t.kcal+e.kcal,p:t.p+e.p,c:t.c+e.c,f:t.f+e.f}),{kcal:0,p:0,c:0,f:0});
+
+  function addEntry() {
+    if (!selected || !grams) return;
+    const g = parseFloat(grams); if (!g) return;
+    const r = g / 100;
+    const entry = { name: selected.name, grams: g, kcal: Math.round(selected.kcal*r),
+      p:+(selected.p*r).toFixed(1), c:+(selected.c*r).toFixed(1), f:+(selected.f*r).toFixed(1) };
+    setLog({ ...log, [date]: [...entries, entry] });
+    setSelected(null); setGrams(""); setQuery("");
+  }
+  function removeEntry(i) { setLog({ ...log, [date]: entries.filter((_,idx)=>idx!==i) }); }
+  function addItemsFromPhoto(items) { setLog({ ...log, [date]: [...entries, ...items] }); }
+  function saveNewFood() {
+    if (!nf.name || !nf.kcal) return;
+    const food = { name: nf.name, kcal:+nf.kcal, p:+nf.p||0, c:+nf.c||0, f:+nf.f||0, custom:true };
+    setCustomFoods([food, ...customFoods]);
+    setSelected(food); setQuery(food.name);
+    setNf({ name:"", kcal:"", p:"", c:"", f:"" }); setShowAdd(false);
+  }
+  const remaining = targets ? targets.kcal - totals.kcal : 0;
+
+  return (
+    <div className="px-4 pt-2 space-y-4">
+      <div className="flex items-center justify-between">
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="bg-white rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm" />
+        <span className="text-sm text-slate-400 capitalize">{new Date(date).toLocaleDateString('fr-FR',{weekday:'long'})}</span>
+      </div>
+
+      {targets && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-3xl font-extrabold text-slate-800">{totals.kcal}<span className="text-base text-slate-400 font-medium"> / {targets.kcal}</span></div>
+              <div className={"text-sm font-semibold " + (remaining<0?"text-red-500":"text-emerald-600")}>
+                {remaining<0 ? `${-remaining} kcal au-dessus` : `${remaining} kcal restantes`}
+              </div>
+            </div>
+          </div>
+          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
+            <div className={"h-full rounded-full transition-all " + (remaining<0?"bg-red-400":"bg-emerald-500")}
+              style={{width: Math.min(100, targets.kcal? totals.kcal/targets.kcal*100:0)+"%"}} />
+          </div>
+          <div className="flex justify-around">
+            <MacroRing value={totals.p} target={targets.protein} label="Protéines" color="#3b82f6" />
+            <MacroRing value={totals.c} target={targets.carbs} label="Glucides" color="#f59e0b" />
+            <MacroRing value={totals.f} target={targets.fat} label="Lipides" color="#a855f7" />
+          </div>
+        </Card>
+      )}
+
+      <PhotoAnalyzer token={token} onAddItems={addItemsFromPhoto} />
+
+      <Card className="p-5">
+        <div className="relative">
+          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg>
+          <input className={fieldCls + " pl-11"} placeholder="Rechercher un aliment…" value={query} onChange={e=>{setQuery(e.target.value); setSelected(null);}} />
+        </div>
+        {results.length>0 && !selected && (
+          <div className="mt-2 space-y-1">
+            {results.map((f,i)=>
+              <button key={i} onClick={()=>{setSelected(f); setQuery(f.name);}}
+                className="w-full text-left px-4 py-3 rounded-2xl bg-slate-50 active:bg-emerald-50 flex justify-between items-center">
+                <span className="text-sm font-medium">{f.name} {f.custom && <span className="text-emerald-500 text-xs">· perso</span>}</span>
+                <span className="text-xs text-slate-400">{f.kcal} kcal/100g</span>
+              </button>)}
+          </div>
+        )}
+        {selected && (
+          <div className="mt-3 bg-emerald-50 rounded-2xl p-4">
+            <div className="flex justify-between items-start mb-3">
+              <span className="font-semibold text-sm">{selected.name}</span>
+              <button onClick={()=>{setSelected(null);setQuery("");setGrams("");}} className="text-slate-400 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">Pour 100g : {selected.kcal} kcal · {selected.p}P / {selected.c}G / {selected.f}L</p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input type="number" inputMode="numeric" autoFocus className={fieldCls + " pr-10 bg-white"} value={grams}
+                  onChange={e=>setGrams(e.target.value)} placeholder="Quantité" onKeyDown={e=>e.key==="Enter"&&addEntry()} />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">g</span>
+              </div>
+              <button onClick={addEntry} className="bg-emerald-500 text-white font-bold px-6 rounded-2xl active:bg-emerald-600">+</button>
+            </div>
+            {grams>0 && (
+              <p className="text-xs text-emerald-700 mt-2 font-medium">
+                → {Math.round(selected.kcal*grams/100)} kcal · {(selected.p*grams/100).toFixed(1)}P / {(selected.c*grams/100).toFixed(1)}G / {(selected.f*grams/100).toFixed(1)}L
+              </p>
+            )}
+          </div>
+        )}
+        <button onClick={()=>setShowAdd(!showAdd)} className="text-sm text-emerald-600 font-semibold mt-3">
+          {showAdd ? "× Annuler" : "+ Créer un aliment personnalisé"}
+        </button>
+        {showAdd && (
+          <div className="mt-3 bg-slate-50 rounded-2xl p-4 space-y-2">
+            <p className="text-xs text-slate-500">Valeurs pour 100 g :</p>
+            <input className={fieldCls + " bg-white"} placeholder="Nom de l'aliment" value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})} />
+            <div className="grid grid-cols-2 gap-2">
+              <input className={fieldCls + " bg-white"} type="number" inputMode="numeric" placeholder="Calories" value={nf.kcal} onChange={e=>setNf({...nf,kcal:e.target.value})} />
+              <input className={fieldCls + " bg-white"} type="number" inputMode="numeric" placeholder="Protéines (g)" value={nf.p} onChange={e=>setNf({...nf,p:e.target.value})} />
+              <input className={fieldCls + " bg-white"} type="number" inputMode="numeric" placeholder="Glucides (g)" value={nf.c} onChange={e=>setNf({...nf,c:e.target.value})} />
+              <input className={fieldCls + " bg-white"} type="number" inputMode="numeric" placeholder="Lipides (g)" value={nf.f} onChange={e=>setNf({...nf,f:e.target.value})} />
+            </div>
+            <button onClick={saveNewFood} className="w-full bg-emerald-500 text-white font-bold py-3 rounded-2xl active:bg-emerald-600">Enregistrer</button>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="font-bold text-slate-800 mb-2">Aliments du jour</h2>
+        {entries.length===0 ? (
+          <p className="text-slate-400 text-sm py-2">Rien d'enregistré. Photographie ton plat ou ajoute un aliment ☝️</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {entries.map((e,i)=>
+              <div key={i} className="flex items-center justify-between py-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">{e.name}</div>
+                  <div className="text-xs text-slate-400">{e.grams} g · {e.p}P / {e.c}G / {e.f}L</div>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="font-bold text-sm">{e.kcal}</span>
+                  <button onClick={()=>removeEntry(i)} className="w-7 h-7 rounded-full bg-slate-100 text-slate-400 active:bg-red-100 active:text-red-500 flex items-center justify-center text-lg leading-none">×</button>
+                </div>
+              </div>)}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ===================== Écran HISTORIQUE ===================== */
+function HistoScreen({ log, targets }) {
+  const [view, setView] = useState("month");
+  const data = useMemo(() => {
+    const days = Object.entries(log).map(([date, entries]) => {
+      const t = entries.reduce((a,e)=>({kcal:a.kcal+e.kcal,p:a.p+e.p,c:a.c+e.c,f:a.f+e.f}),{kcal:0,p:0,c:0,f:0});
+      return { date, ...t };
+    }).filter(d => d.kcal > 0);
+    const groups = {};
+    days.forEach(d => {
+      const key = view==="month" ? d.date.slice(0,7) : d.date.slice(0,4);
+      if (!groups[key]) groups[key] = { days:0, kcal:0, p:0, c:0, f:0 };
+      groups[key].days++; groups[key].kcal+=d.kcal; groups[key].p+=d.p; groups[key].c+=d.c; groups[key].f+=d.f;
+    });
+    return Object.entries(groups).sort((a,b)=>b[0].localeCompare(a[0]))
+      .map(([key,g]) => ({ key, days:g.days, avgKcal: Math.round(g.kcal/g.days),
+        avgP: Math.round(g.p/g.days), avgC: Math.round(g.c/g.days), avgF: Math.round(g.f/g.days) }));
+  }, [log, view]);
+  function fmtKey(k) {
+    if (view==="year") return k;
+    const [y,m] = k.split("-");
+    return new Date(y, m-1, 1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
+  }
+  return (
+    <div className="px-4 pt-2 space-y-4">
+      <div className="flex gap-1 bg-white rounded-2xl p-1 shadow-sm">
+        {[["month","Par mois"],["year","Par an"]].map(([v,l])=>
+          <button key={v} onClick={()=>setView(v)}
+            className={"flex-1 py-2.5 rounded-xl text-sm font-semibold transition " + (view===v?"bg-emerald-500 text-white":"text-slate-500")}>{l}</button>)}
+      </div>
+      {data.length===0 ? (
+        <Card className="p-6 text-center text-slate-400 text-sm">Pas encore de données.<br/>Enregistre tes repas dans l'onglet « Suivi ».</Card>
+      ) : data.map(r=>{
+        const over = targets && r.avgKcal > targets.kcal;
+        return (
+          <Card key={r.key} className="p-5">
+            <div className="flex justify-between items-baseline mb-3">
+              <span className="font-bold capitalize">{fmtKey(r.key)}</span>
+              <span className="text-xs text-slate-400">{r.days} jour{r.days>1?"s":""} suivi{r.days>1?"s":""}</span>
+            </div>
+            <div className="flex items-baseline gap-2 mb-3">
+              <span className={"text-3xl font-extrabold " + (over?"text-red-500":"text-slate-800")}>{r.avgKcal}</span>
+              <span className="text-sm text-slate-400">kcal/jour en moyenne{targets && ` · cible ${targets.kcal}`}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[["Prot",r.avgP,"text-blue-500 bg-blue-50"],["Gluc",r.avgC,"text-amber-500 bg-amber-50"],["Lip",r.avgF,"text-purple-500 bg-purple-50"]].map(([l,v,c])=>{
+                const [tc,bg]=c.split(" ");
+                return <div key={l} className={"rounded-2xl py-2 text-center "+bg}>
+                  <div className={"text-lg font-bold "+tc}>{v}g</div>
+                  <div className="text-[11px] text-slate-500">{l} / jour</div>
+                </div>;
+              })}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ===================== NavBar ===================== */
+function NavBar({ tab, setTab }) {
+  const items = [
+    { id:"profil", label:"Besoins", icon:"M12 2a5 5 0 100 10 5 5 0 000-10zM4 21a8 8 0 0116 0" },
+    { id:"suivi", label:"Suivi", icon:"M9 11l3 3 8-8M21 12a9 9 0 11-9-9" },
+    { id:"histo", label:"Historique", icon:"M3 3v18h18M7 14l4-4 3 3 5-5" },
+  ];
+  return (
+    <nav className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-100 z-20" style={{paddingBottom:"env(safe-area-inset-bottom)"}}>
+      <div className="max-w-md mx-auto flex">
+        {items.map(it=>{
+          const active = tab===it.id;
+          return (
+            <button key={it.id} onClick={()=>setTab(it.id)} className="flex-1 flex flex-col items-center gap-1 py-2.5">
+              <svg className={"w-6 h-6 transition " + (active?"text-emerald-500":"text-slate-400")} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d={it.icon}/></svg>
+              <span className={"text-[11px] font-semibold " + (active?"text-emerald-500":"text-slate-400")}>{it.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/* ===================== App principale (connectée) ===================== */
+function MainApp({ session, profileRow, access, onLogout, refreshProfile }) {
+  const uid = session.user.id;
+  const token = session.access_token;
+  const initial = loadLocal(uid);
+
+  const [tab, setTab] = useState("suivi");
+  const [profile, setProfile] = useState(initial.profile || {
+    sex: profileRow.sex || "h", age: profileRow.age || "", weight: profileRow.weight || "",
+    height: profileRow.height || "", activity: profileRow.activity || "mod", goal: profileRow.goal || "maintain",
+  });
+  const [log, setLog] = useState(initial.log || {});
+  const [customFoods, setCustomFoods] = useState(initial.customFoods || []);
+  const targets = useMemo(() => computeTargets(profile), [profile]);
+
+  // Sauvegarde locale
+  useEffect(() => { saveLocal(uid, { profile, log, customFoods }); }, [uid, profile, log, customFoods]);
+
+  // Sauvegarde du profil dans Supabase (sync entre appareils), avec léger délai
+  useEffect(() => {
+    const t = setTimeout(() => {
+      sb.from("profiles").update({
+        sex: profile.sex, age: profile.age ? parseInt(profile.age) : null,
+        weight: profile.weight ? parseFloat(profile.weight) : null,
+        height: profile.height ? parseFloat(profile.height) : null,
+        activity: profile.activity, goal: profile.goal,
+      }).eq("id", uid).then(()=>{});
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [uid, profile]);
+
+  const titles = { profil:"Mes besoins", suivi:"Suivi du jour", histo:"Historique" };
+
+  // Bandeau d'essai
+  let trialBadge = null;
+  if (access.status === "trial" && access.trialEnds) {
+    const days = Math.max(0, Math.ceil((new Date(access.trialEnds) - new Date()) / 86400000));
+    trialBadge = <span className="text-[11px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">Essai · {days}j</span>;
+  } else if (access.status === "active" || access.status === "trialing") {
+    trialBadge = <span className="text-[11px] bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">Premium</span>;
+  }
+
+  return (
+    <div className="max-w-md mx-auto min-h-screen bg-slate-100 safe-bottom">
+      <header className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur px-4 pt-4 pb-2" style={{paddingTop:"calc(env(safe-area-inset-top) + 1rem)"}}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🥗</span>
+            <div>
+              <h1 className="text-xl font-extrabold tracking-tight leading-none">{titles[tab]}</h1>
+              <p className="text-xs text-slate-400">NutriTracker</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {trialBadge}
+            <button onClick={onLogout} className="text-slate-400 text-xs font-medium">Déconnexion</button>
+          </div>
+        </div>
+      </header>
+
+      {tab==="profil" && <ProfilScreen profile={profile} setProfile={setProfile} targets={targets} />}
+      {tab==="suivi" && <SuiviScreen token={token} targets={targets} log={log} setLog={setLog} customFoods={customFoods} setCustomFoods={setCustomFoods} />}
+      {tab==="histo" && <HistoScreen log={log} targets={targets} />}
+
+      <p className="text-center text-[11px] text-slate-300 px-6 mt-6">Estimations indicatives, ne remplacent pas un avis médical.</p>
+      <NavBar tab={tab} setTab={setTab} />
+    </div>
+  );
+}
+
+/* ===================== Racine : session + accès ===================== */
+function computeAccess(p) {
+  if (!p) return { ok: false, status: "none" };
+  const s = p.subscription_status;
+  if (s === "active" || s === "trialing") return { ok: true, status: s };
+  if (p.trial_ends_at && new Date(p.trial_ends_at) > new Date()) return { ok: true, status: "trial", trialEnds: p.trial_ends_at };
+  return { ok: false, status: s };
+}
+
+function Root() {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [profileRow, setProfileRow] = useState(null);
+
+  async function loadProfile(uid) {
+    const { data } = await sb.from("profiles").select("*").eq("id", uid).single();
+    setProfileRow(data || null);
+    return data;
+  }
+
+  useEffect(() => {
+    if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes("TON-PROJET")) { setLoading(false); return; }
+    sb.auth.getSession().then(async ({ data }) => {
+      setSession(data.session);
+      if (data.session) await loadProfile(data.session.user.id);
+      setLoading(false);
+    });
+    const { data: sub } = sb.auth.onAuthStateChange(async (_e, s) => {
+      setSession(s);
+      if (s) await loadProfile(s.user.id); else setProfileRow(null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // Au retour du paiement, rafraîchit le statut (le webhook peut prendre quelques secondes)
+  useEffect(() => {
+    if (!session) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "success") {
+      let tries = 0;
+      const iv = setInterval(async () => {
+        tries++;
+        const p = await loadProfile(session.user.id);
+        if ((p && (p.subscription_status === "active" || p.subscription_status === "trialing")) || tries > 6) {
+          clearInterval(iv);
+          window.history.replaceState({}, "", "/");
+        }
+      }, 2000);
+      return () => clearInterval(iv);
+    }
+  }, [session]);
+
+  if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes("TON-PROJET")) {
+    return <div className="max-w-md mx-auto min-h-screen flex items-center justify-center px-6 text-center text-slate-500 text-sm">
+      ⚙️ Configuration manquante : renseigne tes clés Supabase dans <b className="mx-1">config.js</b>.
+    </div>;
+  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-emerald-500"><Spinner className="w-8 h-8" /></div>;
+  if (!session) return <AuthScreen />;
+
+  const access = computeAccess(profileRow);
+  if (!access.ok) return <Paywall token={session.access_token} email={session.user.email} onLogout={()=>sb.auth.signOut()} />;
+
+  return <MainApp session={session} profileRow={profileRow || {}} access={access}
+    onLogout={()=>sb.auth.signOut()} refreshProfile={()=>loadProfile(session.user.id)} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  }
+</script>
+</body>
+</html>
