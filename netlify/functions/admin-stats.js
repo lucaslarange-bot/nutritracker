@@ -39,7 +39,7 @@ exports.handler = async (event) => {
     const clicks = events.filter(e => e.event_type === "click");
     const uniqueVisitors = new Set(pageViews.map(e => e.session_id).filter(Boolean)).size;
     const newUsers = users.filter(u => new Date(u.created_at) >= new Date(since));
-    const activeSubscriptions = users.filter(u => ["active","trialing"].includes(u.user_metadata?.subscription_status)).length;
+    const activeSubscriptions = (profiles || []).filter(p => ["active","trialing"].includes(p.subscription_status)).length;
 
     const daily = {};
     for (let i = days - 1; i >= 0; i--) {
@@ -55,7 +55,7 @@ exports.handler = async (event) => {
 
     const recentUsers = users.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0, 12).map(u => ({
       id: u.id, email: u.email, created_at: u.created_at, last_sign_in_at: u.last_sign_in_at,
-      status: u.user_metadata?.subscription_status || "trial"
+      status: profileById.get(u.id)?.subscription_status || "trial"
     }));
 
     return {
