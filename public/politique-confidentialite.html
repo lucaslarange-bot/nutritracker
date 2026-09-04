@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Politique de confidentialité — TrackCalori / NutriTracker</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem 4rem; color: #1e293b; line-height: 1.6; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; color: #0f172a; }
+  p, li { color: #334155; }
+  .maj { color: #64748b; font-size: 0.9rem; margin-bottom: 2rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  th { background: #f1f5f9; }
+  a { color: #10b981; }
+</style>
+</head>
+<body>
+
+<h1>Politique de confidentialité</h1>
+<p class="maj">Application TrackCalori (édition iOS) / NutriTracker (nutritracker.store) — Dernière mise à jour : à compléter à la publication.</p>
+
+<p>NutriTracker ("l'application", "nous") est édité par <strong>Lucas Larangé</strong>, France. Contact : <strong><a href="mailto:contact@trackcalori.com">contact@trackcalori.com</a></strong>.</p>
+
+<p>Cette politique décrit les données que nous collectons quand tu utilises l'application (web sur nutritracker.store, ou l'app iOS TrackCalori), pourquoi, et comment tu peux exercer tes droits.</p>
+
+<h2>1. Données que nous collectons</h2>
+<table>
+<tr><th>Donnée</th><th>Pourquoi</th><th>Où elle est stockée</th></tr>
+<tr><td>Adresse email, mot de passe (chiffré)</td><td>Créer et sécuriser ton compte</td><td>Supabase (base de données et authentification)</td></tr>
+<tr><td>Données de profil : âge, sexe, poids, taille, niveau d'activité, objectif</td><td>Calculer tes besoins caloriques et macros personnalisés</td><td>Supabase</td></tr>
+<tr><td>Historique de suivi (repas, calories, macros saisis au fil des jours)</td><td>Afficher ton suivi et ton historique</td><td>Supabase, et une copie locale sur ton appareil (stockage local du navigateur / de l'app)</td></tr>
+<tr><td>Photos de repas que tu prends dans l'app</td><td>Estimer automatiquement les calories/macros d'un repas via une IA d'analyse d'image</td><td>Envoyées à l'API Anthropic (Claude) pour analyse ; non stockées durablement par nos soins au-delà du traitement de la requête</td></tr>
+<tr><td>Informations de paiement (numéro de carte, etc.)</td><td>Gérer ton abonnement</td><td><strong>Jamais stockées par nous</strong> : traitées directement par Stripe (version web) ou par Apple / In-App Purchase et RevenueCat (version iOS)</td></tr>
+<tr><td>Identifiant technique d'abonnement (ex. identifiant client Stripe, identifiant RevenueCat)</td><td>Savoir si ton abonnement est actif</td><td>Supabase</td></tr>
+</table>
+
+<h2>2. Ce que nous NE collectons PAS</h2>
+<ul>
+  <li>Aucune donnée de santé médicale au sens strict (pas de connexion à Apple Health/HealthKit, pas de données issues d'appareils médicaux).</li>
+  <li>Aucune géolocalisation.</li>
+  <li>Aucune donnée biométrique (les photos de repas ne contiennent pas de reconnaissance faciale ni d'identification de personnes).</li>
+</ul>
+
+<h2>3. Sous-traitants et partenaires</h2>
+<p>Nous faisons appel aux prestataires suivants, qui traitent certaines données en notre nom, dans le respect de leurs propres politiques de confidentialité :</p>
+<ul>
+  <li><strong>Supabase</strong> (hébergement base de données et authentification)</li>
+  <li><strong>Netlify</strong> (hébergement du site et des fonctions serveur)</li>
+  <li><strong>Anthropic</strong> (API Claude, pour l'analyse des photos de repas)</li>
+  <li><strong>Stripe</strong> (paiement, version web)</li>
+  <li><strong>Apple / RevenueCat</strong> (paiement et gestion d'abonnement, version iOS via In-App Purchase)</li>
+</ul>
+<p>Nous ne vendons aucune donnée personnelle à des tiers à des fins publicitaires.</p>
+
+<h2>4. Durée de conservation</h2>
+<p>Tes données de compte et de suivi sont conservées tant que ton compte est actif. Les photos de repas envoyées pour analyse ne sont pas conservées durablement par nos soins une fois le résultat renvoyé (elles peuvent être traitées temporairement par Anthropic dans le cadre du traitement de la requête, selon leur propre politique de rétention).</p>
+
+<h2>5. Tes droits</h2>
+<p>Conformément au RGPD (si tu résides dans l'Union européenne) et aux lois applicables, tu disposes d'un droit d'accès, de rectification, de suppression, de portabilité et d'opposition sur tes données.</p>
+<ul>
+  <li><strong>Suppression de compte directement dans l'app</strong> : disponible dans les paramètres de l'application. La suppression entraîne l'effacement de ton profil, de ton historique et de tes données associées.</li>
+  <li>Tu peux aussi nous contacter à <strong>contact@trackcalori.com</strong> pour toute demande relative à tes données.</li>
+</ul>
+
+<h2>6. Âge minimum</h2>
+<p>L'application n'est pas destinée aux enfants de moins de 16 ans. Nous ne collectons pas sciemment de données concernant des mineurs de moins de 16 ans.</p>
+
+<h2>7. Sécurité</h2>
+<p>Les mots de passe sont chiffrés. Les communications entre l'application et nos serveurs sont chiffrées (HTTPS/TLS). L'accès aux données côté serveur est restreint aux fonctions strictement nécessaires au fonctionnement de l'application.</p>
+
+<h2>8. Modifications de cette politique</h2>
+<p>Cette politique peut être mise à jour. La date de dernière mise à jour est indiquée en haut de cette page. En cas de changement important, nous t'en informerons via l'application ou par email.</p>
+
+<h2>Contact</h2>
+<p>Pour toute question relative à cette politique ou à tes données personnelles : <strong>contact@trackcalori.com</strong>.</p>
+
+</body>
+</html>

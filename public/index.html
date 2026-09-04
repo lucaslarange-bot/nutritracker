@@ -215,14 +215,44 @@ function AuthScreen() {
 }
 
 /* ===================== Écran PAYWALL ===================== */
-function Paywall({ token, onLogout, email }) {
+/* Sur l'app iOS native, Apple impose son propre système d'achat (In-App Purchase,
+   règle App Review 3.1.1) : on ne peut pas rediriger vers Stripe Checkout dans l'app.
+   RevenueCat (déjà branché nativement via le plugin Capacitor, voir capacitor.config.ts)
+   gère l'achat StoreKit et prévient notre backend via netlify/functions/revenuecat-webhook.js,
+   qui met à jour le même champ "subscription_status" que Stripe. Sur le web, on garde Stripe. */
+const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const REVENUECAT_ENTITLEMENT_ID = "premium"; // doit correspondre à l'entitlement créé dans le dashboard RevenueCat
+
+async function purchaseNative(userId) {
+  const RC = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases;
+  if (!RC) throw new Error("Module d'achat indisponible.");
+  // configure() ne fait rien si déjà configuré avec le même appUserID.
+  await RC.configure({ apiKey: window.NUTRI_CONFIG.REVENUECAT_IOS_KEY, appUserID: userId });
+  const offerings = await RC.getOfferings();
+  const pkg = offerings?.current?.availablePackages?.[0];
+  if (!pkg) throw new Error("Aucune offre disponible pour le moment.");
+  const { customerInfo } = await RC.purchasePackage({ aPackage: pkg });
+  const active = customerInfo?.entitlements?.active?.[REVENUECAT_ENTITLEMENT_ID];
+  if (!active) throw new Error("Achat non confirmé.");
+}
+
+function Paywall({ token, userId, onLogout, email }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   async function subscribe() {
     setBusy(true); setErr(null);
-    const { ok, data } = await apiFetch("create-checkout", token, {});
-    if (ok && data.url) { window.location.href = data.url; }
-    else { setErr(data.error || "Impossible de démarrer le paiement."); setBusy(false); }
+    try {
+      if (IS_NATIVE) {
+        await purchaseNative(userId);
+        window.location.reload(); // le webhook RevenueCat a quelques secondes pour arriver ; le profil se rafraîchit
+        return;
+      }
+      const { ok, data } = await apiFetch("create-checkout", token, {});
+      if (ok && data.url) { window.location.href = data.url; }
+      else { setErr(data.error || "Impossible de démarrer le paiement."); setBusy(false); }
+    } catch (e) {
+      setErr(e.message || "Achat annulé ou impossible."); setBusy(false);
+    }
   }
   return (
     <div className="max-w-md mx-auto min-h-screen flex flex-col justify-center px-6">
@@ -800,7 +830,7 @@ function Root() {
   if (!session) return <AuthScreen />;
 
   const access = computeAccess(profileRow);
-  if (!access.ok) return <Paywall token={session.access_token} email={session.user.email} onLogout={()=>sb.auth.signOut()} />;
+  if (!access.ok) return <Paywall token={session.access_token} userId={session.user.id} email={session.user.email} onLogout={()=>sb.auth.signOut()} />;
 
   return <MainApp session={session} profileRow={profileRow || {}} access={access}
     onLogout={()=>sb.auth.signOut()} refreshProfile={()=>loadProfile(session.user.id)} />;
@@ -809,8 +839,23 @@ function Root() {
 ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
 </script>
 <script>
-  if ("serviceWorker" in navigator) {
+  // Le service worker (cache offline du PWA web) ne doit PAS s'enregistrer dans l'app
+  // native : Capacitor sert déjà les fichiers localement depuis le bundle iOS, et un SW
+  // actif dans la WKWebView peut interférer avec ce chargement local / le rafraîchissement
+  // des mises à jour de l'app.
+  if ("serviceWorker" in navigator && !IS_NATIVE) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  }
+
+  // Ajustements natifs iOS : statusbar, splash screen, clavier.
+  if (IS_NATIVE && window.Capacitor.Plugins) {
+    const { StatusBar, SplashScreen, Keyboard } = window.Capacitor.Plugins;
+    StatusBar?.setBackgroundColor?.({ color: "#10b981" }).catch(() => {});
+    StatusBar?.setStyle?.({ style: "LIGHT" }).catch(() => {});
+    // "body" : le WebView redimensionne la page quand le clavier apparaît, pour que
+    // le champ actif reste visible au-dessus (utile avec la nav du bas en position fixed).
+    Keyboard?.setResizeMode?.({ mode: "body" }).catch(() => {});
+    window.addEventListener("load", () => SplashScreen?.hide?.().catch(() => {}));
   }
 </script>
 </body>
