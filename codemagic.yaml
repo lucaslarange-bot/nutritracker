@@ -50,7 +50,6 @@ workflows:
         notify:
           success: true
           failure: true
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        submit_to_app_store: false
+      # app_store_connect publishing sera reactive une fois l'integration
+      # App Store Connect API configuree dans Codemagic (Teams > Integrations),
+      # ce qui necessite un compte Apple Developer actif.
