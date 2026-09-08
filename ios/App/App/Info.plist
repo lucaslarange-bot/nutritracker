@@ -70,5 +70,7 @@
 	<string>TrackCalori accède à tes photos pour te permettre d'analyser un repas déjà pris en photo.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>TrackCalori peut enregistrer des photos de repas dans ta pellicule si tu choisis de les sauvegarder.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
