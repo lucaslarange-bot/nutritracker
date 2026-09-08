@@ -2,7 +2,7 @@
   "name": "nutritracker-app",
   "version": "1.0.0",
   "private": true,
-  "description": "NutriTracker — calculateur de besoins, suivi, analyse photo par IA et abonnement.",
+  "description": "NutriTracker \u2014 calculateur de besoins, suivi, analyse photo par IA et abonnement.",
   "dependencies": {
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.1",
@@ -15,6 +15,7 @@
     "stripe": "^16.8.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.1"
+    "@capacitor/cli": "^8.5.1",
+    "typescript": "^5.6.0"
   }
 }
